@@ -1,0 +1,85 @@
+modules:
+  # === JIRA UI MODULES ===
+
+  # Admin Configuration Page
+  jira:adminPage:
+    - key: afforestation-config
+      resource: admin-page
+      resolver:
+        function: resolver
+      render: native
+      title: Afforestation Settings
+
+  # Project Dashboard Page
+  jira:projectPage:
+    - key: afforestation-dashboard
+      resource: dashboard-page
+      resolver:
+        function: resolver
+      render: native
+      title: Impact Dashboard
+      icon: addon-icon
+
+  # Issue Panel
+  jira:issuePanel:
+    - key: afforestation-issue-panel
+      resource: issue-panel
+      resolver:
+        function: resolver
+      render: native
+      title: Impact
+      icon: addon-icon
+
+  # === TRIGGERS ===
+
+  # Issue Updated Trigger - listens for completion events
+  trigger:
+    - key: on-issue-updated
+      function: issue-updated-handler
+      events:
+        - avi:jira:updated:issue
+
+  # Weekly Scheduled Trigger - for pledge batching
+  scheduledTrigger:
+    - key: weekly-pledge-batch
+      function: batch-pledge-handler
+      interval: week
+
+  # === FUNCTIONS ===
+  function:
+    - key: resolver
+      handler: index.handler
+    - key: issue-updated-handler
+      handler: handlers/issue-updated.handler
+    - key: batch-pledge-handler
+      handler: handlers/batch-pledge.handler
+
+# === RESOURCES (UI Kit) ===
+resources:
+  - key: admin-page
+    path: src/ui/admin/index.jsx
+  - key: dashboard-page
+    path: src/ui/dashboard/index.jsx
+  - key: issue-panel
+    path: src/ui/issue-panel/index.jsx
+  - key: addon-icon
+    path: static/icon.svg
+
+# === PERMISSIONS ===
+permissions:
+  scopes:
+    - read:jira-work
+    - write:jira-work
+    - storage:app
+  external:
+    fetch:
+      client:
+        - address: api.afforestation.org
+
+# === APP CONFIG ===
+app:
+  runtime:
+    name: nodejs24.x
+    memoryMB: 256
+    architecture: arm64
+  id: ari:cloud:ecosystem::app/8d2772ec-5570-42f0-89c8-8de26bcae44f
