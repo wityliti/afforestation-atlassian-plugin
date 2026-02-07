@@ -18,7 +18,7 @@ modules:
         function: resolver
       render: native
       title: Impact Dashboard
-      icon: addon-icon
+      icon: https://raw.githubusercontent.com/wityliti/afforestation-atlassian-plugin/main/docs/tree-icon.png
 
   # Issue Panel
   jira:issuePanel:
@@ -28,7 +28,7 @@ modules:
         function: resolver
       render: native
       title: Impact
-      icon: addon-icon
+      icon: https://raw.githubusercontent.com/wityliti/afforestation-atlassian-plugin/main/docs/tree-icon.png
 
   # === TRIGGERS ===
 
@@ -62,8 +62,6 @@ resources:
     path: src/ui/dashboard/index.jsx
   - key: issue-panel
     path: src/ui/issue-panel/index.jsx
-  - key: addon-icon
-    path: src/assets/icon.png
 
 # === PERMISSIONS ===
 permissions:
