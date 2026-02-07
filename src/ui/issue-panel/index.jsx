@@ -1,43 +1,39 @@
-import ForgeUI, { render, IssuePanel, Fragment, Text, Badge, useState, useEffect, Strong, useProductContext } from '@forge/ui';
-import { getIssueLedger } from '../services/ledger';
-import { getTenantConfig } from '../services/tenant-config';
+import React, { useState, useEffect } from 'react';
+import { invoke } from '@forge/bridge';
+import { Text, Badge, Stack, Box } from '@forge/react';
 
 const Panel = () => {
-    const context = useProductContext();
-    const [ledger, setLedger] = useState(null);
-    const [config, setConfig] = useState(null);
+    const [data, setData] = useState(null);
     const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
 
-    useEffect(async () => {
-        try {
-            const tenantId = context?.platformContext?.cloudId || 'default';
-            const issueId = context?.extension?.issue?.id;
-
-            if (!issueId) {
+    useEffect(() => {
+        const loadData = async () => {
+            try {
+                // Get issue context from the view
+                const context = await invoke('getIssueImpact', { issueId: 'current' });
+                setData(context);
+            } catch (err) {
+                console.error('Issue panel load error:', err);
+                setError(err.message);
+            } finally {
                 setLoading(false);
-                return;
             }
-
-            const [cfg, issueLedger] = await Promise.all([
-                getTenantConfig(tenantId),
-                getIssueLedger(tenantId, issueId)
-            ]);
-
-            setConfig(cfg);
-            setLedger(issueLedger);
-        } catch (error) {
-            console.error('Issue panel load error:', error);
-        } finally {
-            setLoading(false);
-        }
+        };
+        loadData();
     }, []);
 
     if (loading) {
         return <Text>Loading...</Text>;
     }
 
-    const currencyName = config?.scoring?.currencyName || 'Leaves';
-    const leavesPerTree = config?.plantingMode?.conversion?.leavesPerTree || 100;
+    if (error) {
+        return <Text>Error: {error}</Text>;
+    }
+
+    const currencyName = data?.currencyName || 'Leaves';
+    const leavesPerTree = data?.leavesPerTree || 100;
+    const ledger = data?.ledger;
 
     const totalLeaves = ledger?.totalLeaves || 0;
     const completionCount = ledger?.completionCount || 0;
@@ -46,36 +42,36 @@ const Panel = () => {
     // If no contributions yet
     if (completionCount === 0) {
         return (
-            <Fragment>
-                <Text>🌱 <Strong>Impact</Strong></Text>
+            <Stack space="space.100">
+                <Text weight="bold">🌱 Impact</Text>
                 <Text>No impact recorded yet. Complete this issue to earn {currencyName}!</Text>
-            </Fragment>
+            </Stack>
         );
     }
 
     return (
-        <Fragment>
-            <Text>🌳 <Strong>Impact from this Issue</Strong></Text>
+        <Stack space="space.100">
+            <Text weight="bold">🌳 Impact from this Issue</Text>
 
-            <Badge appearance="primary" text={`🍃 ${totalLeaves} ${currencyName}`} />
+            <Box>
+                <Badge appearance="primary">🍃 {totalLeaves} {currencyName}</Badge>
+            </Box>
 
             {treesFromIssue > 0 && (
-                <Badge appearance="added" text={`🌲 ${treesFromIssue} Tree${treesFromIssue > 1 ? 's' : ''}`} />
+                <Box>
+                    <Badge appearance="added">🌲 {treesFromIssue} Tree{treesFromIssue > 1 ? 's' : ''}</Badge>
+                </Box>
             )}
 
             {completionCount > 1 && (
-                <Text>Completed {completionCount} time{completionCount > 1 ? 's' : ''}</Text>
+                <Text>Completed {completionCount} times</Text>
             )}
 
             {ledger?.lastCompletedAt && (
                 <Text>Last: {new Date(ledger.lastCompletedAt).toLocaleDateString()}</Text>
             )}
-        </Fragment>
+        </Stack>
     );
 };
 
-export const run = render(
-    <IssuePanel>
-        <Panel />
-    </IssuePanel>
-);
+export default Panel;

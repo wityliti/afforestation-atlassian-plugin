@@ -63,7 +63,7 @@ resources:
   - key: issue-panel
     path: src/ui/issue-panel/index.jsx
   - key: addon-icon
-    path: static/icon.svg
+    path: src/assets/icon.png
 
 # === PERMISSIONS ===
 permissions:
