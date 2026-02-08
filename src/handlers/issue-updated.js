@@ -12,15 +12,19 @@ import { checkScope } from '../services/scope-filter';
 import { calculateScore } from '../services/scorer';
 import { getTenantConfig } from '../services/tenant-config';
 import { checkAwardExists, recordAward, updateIssueLedger } from '../services/ledger';
-import { incrementAgg, incrementUserAgg } from '../services/aggregation';
-import { generateAwardId } from '../services/storage-keys';
+import { incrementAgg, incrementUserAgg, incrementTeamAgg, getWeekKey } from '../services/aggregation';
+import { generateAwardId, getAccountKey } from '../services/storage-keys';
+import { createPlantOrder } from '../services/afforestation-client';
 
 /**
  * Main handler for issue updated events
  */
 export async function handler(event, context) {
     const { issue, changelog, atlassianId } = event;
-    const tenantId = context.cloudId;
+    let tenantId = context.cloudId || context.workspaceId;
+    if (!tenantId && context.installContext) {
+        tenantId = context.installContext.split('/').pop();
+    }
 
     console.log(`[IssueUpdated] Processing issue ${issue.key} for tenant ${tenantId}`);
 
@@ -81,8 +85,17 @@ export async function handler(event, context) {
 
         // 9. Update aggregations
         const now = new Date();
-        const periodKey = now.toISOString().split('T')[0]; // YYYY-MM-DD
-        await incrementAgg(tenantId, 'daily', periodKey, score.leaves, score.trees);
+        const dailyKey = now.toISOString().split('T')[0]; // YYYY-MM-DD
+        const weekKey = getWeekKey(now);
+        const monthKey = now.toISOString().substring(0, 7); // YYYY-MM
+
+        await Promise.all([
+            incrementAgg(tenantId, 'daily', dailyKey, score.leaves, score.trees),
+            incrementAgg(tenantId, 'weekly', weekKey, score.leaves, score.trees),
+            incrementAgg(tenantId, 'monthly', monthKey, score.leaves, score.trees),
+            // Track team stats (Project = Team)
+            incrementTeamAgg(tenantId, issue.fields.project.key, 'monthly', monthKey, score.leaves, score.trees)
+        ]);
 
         if (issue.fields.assignee?.accountId) {
             await incrementUserAgg(tenantId, issue.fields.assignee.accountId, 'daily', periodKey, score.leaves);
@@ -90,8 +103,23 @@ export async function handler(event, context) {
 
         // 10. Process planting (instant or pledge)
         if (config.plantingMode.instantEnabled && score.trees > 0) {
-            console.log(`[IssueUpdated] Instant planting ${score.trees} trees for ${issue.key}`);
-            // TODO: Implement instant planting via Afforestation API
+            const account = await storage.get(getAccountKey(tenantId));
+            if (account?.apiKey) {
+                console.log(`[IssueUpdated] Instant planting ${score.trees} trees for ${issue.key}`);
+                const plantResult = await createPlantOrder({
+                    tenantId,
+                    projectId: config.funding?.projectCatalogSelection?.[0]?.projectId,
+                    trees: score.trees,
+                    issueKey: issue.key,
+                    issueId: issue.id,
+                    awardId
+                }, account.apiKey);
+                if (!plantResult.success) {
+                    console.error(`[IssueUpdated] Instant planting failed for ${issue.key}:`, plantResult.error);
+                }
+            } else {
+                console.log(`[IssueUpdated] No linked account for instant planting, skipping ${issue.key}`);
+            }
         } else if (config.plantingMode.pledgeEnabled) {
             console.log(`[IssueUpdated] Added ${score.trees} trees to pledge batch for ${issue.key}`);
             // Trees are already counted in aggregations, will be processed by scheduled trigger

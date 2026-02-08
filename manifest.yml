@@ -8,7 +8,7 @@ modules:
       resolver:
         function: resolver
       render: native
-      title: Afforestation Settings
+      title: Grow for Jira
 
   # Project Dashboard Page
   jira:projectPage:
@@ -71,8 +71,12 @@ permissions:
     - storage:app
   external:
     fetch:
+      backend:
+        - "https://afforestation.org"
+        - "https://*.afforestation.org"
       client:
-        - address: api.afforestation.org
+        - "https://afforestation.org"
+        - "https://*.afforestation.org"
 
 # === APP CONFIG ===
 app:

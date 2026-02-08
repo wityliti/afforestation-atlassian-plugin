@@ -4,7 +4,7 @@
  * Manages time-bucketed aggregations per spec section 3.3
  */
 
-import { storage } from '@forge/api';
+import { storage, startsWith } from '@forge/api';
 import { getAggKey, getUserAggKey, getTeamAggKey, getRemainderKey } from './storage-keys';
 
 /**
@@ -224,10 +224,39 @@ export async function getDashboardAggregations(tenantId) {
 /**
  * Get ISO week key
  */
-function getWeekKey(date) {
+export function getWeekKey(date) {
     const year = date.getFullYear();
     const startOfYear = new Date(year, 0, 1);
     const days = Math.floor((date - startOfYear) / (24 * 60 * 60 * 1000));
     const week = Math.ceil((days + startOfYear.getDay() + 1) / 7);
     return `${year}-W${week.toString().padStart(2, '0')}`;
+}
+
+/**
+ * Get top teams for a period
+ * Query all team keys and filter in memory (inefficient for large scale, ok for demo)
+ */
+export async function getTopTeams(tenantId, periodType, periodKey, limit = 5) {
+    // Key pattern: teamAgg:{tenantId}:{teamId}:{periodType}:{periodKey}
+    // We can't filter by suffix easily, so we fetch all team aggs for the tenant
+    // Ideally, we'd have a secondary index or different key structure.
+
+    // Prefix: teamAgg:{tenantId}:
+    const prefix = `teamAgg:${tenantId}:`;
+    const results = await storage.query()
+        .where('key', startsWith(prefix))
+        .limit(100) // Safety limit
+        .getMany();
+
+    const teams = [];
+    for (const result of results.results) {
+        const agg = result.value;
+        if (agg.periodType === periodType && agg.periodKey === periodKey) {
+            teams.push(agg);
+        }
+    }
+
+    return teams
+        .sort((a, b) => b.leaves - a.leaves)
+        .slice(0, limit);
 }

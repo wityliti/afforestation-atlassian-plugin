@@ -10,6 +10,7 @@ import { queryAllTenants } from '../services/tenant-config';
 import { getAgg, resetPledgeCounters } from '../services/aggregation';
 import { allocateFunding } from '../services/funding-allocator';
 import { createPledge } from '../services/afforestation-client';
+import { getAccountKey } from '../services/storage-keys';
 
 /**
  * Handler for weekly pledge batch processing
@@ -69,6 +70,13 @@ async function processTenantPledge(tenant) {
         return;
     }
 
+    // Load account API key
+    const account = await storage.get(getAccountKey(tenantId));
+    if (!account?.apiKey) {
+        console.log(`[BatchPledge] No linked account for ${tenantId}, skipping pledge`);
+        return;
+    }
+
     // Create pledge via Afforestation API
     const pledgeData = {
         tenantId,
@@ -83,7 +91,7 @@ async function processTenantPledge(tenant) {
         }
     };
 
-    const result = await createPledge(pledgeData);
+    const result = await createPledge(pledgeData, account.apiKey);
 
     if (result.success) {
         console.log(`[BatchPledge] Successfully created pledge ${result.pledgeId} for ${tenantId}`);

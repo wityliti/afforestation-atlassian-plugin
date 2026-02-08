@@ -1,18 +1,156 @@
 /**
  * Resolver Functions for UI modules
- * 
+ *
  * Handles data requests from the Forge UI components
  */
 
 import Resolver from '@forge/resolver';
+import { storage } from '@forge/api';
 import { getTenantConfig, setTenantConfig, getRules, setRules, getFunding, setFunding } from '../services/tenant-config';
-import { getDashboardAggregations, getUserAgg } from '../services/aggregation';
+import { getDashboardAggregations, getUserAgg, getTopTeams } from '../services/aggregation';
 import { getIssueLedger } from '../services/ledger';
 import { previewScore } from '../services/scorer';
-import { getCatalogProjects, getCatalogTrees, getPledgeStatus } from '../services/afforestation-client';
+import { getCatalogProjects, getCatalogTrees, getPledgeStatus, generateAuthToken, checkAuthToken, validateLinkCode } from '../services/afforestation-client';
 import { previewAllocation, validateFundingConfig } from '../services/funding-allocator';
+import { getAccountKey, getPendingTokenKey } from '../services/storage-keys';
 
 const resolver = new Resolver();
+
+const MAIN_APP_URL = 'https://afforestation.org';
+
+// ============ Account Resolvers ============
+
+resolver.define('getAccountStatus', async ({ context }) => {
+  const tenantId = context.cloudId;
+  const account = await storage.get(getAccountKey(tenantId));
+  if (account && account.companyId) {
+    return {
+      isLinked: true,
+      companyId: account.companyId,
+      companyName: account.companyName
+    };
+  }
+  return { isLinked: false };
+});
+
+resolver.define('linkAccount', async ({ payload, context }) => {
+  const tenantId = context.cloudId;
+  const { linkCode } = payload;
+
+  if (!linkCode || linkCode.trim().length === 0) {
+    return { success: false, error: 'Please enter a link code' };
+  }
+
+  try {
+    const siteUrl = context.siteUrl || `https://${context.cloudId}.atlassian.net`;
+    const result = await validateLinkCode(linkCode.trim(), siteUrl);
+
+    if (result.companyId) {
+      await storage.set(getAccountKey(tenantId), {
+        companyId: result.companyId,
+        companyName: result.companyName,
+        apiKey: result.apiKey,
+        linkedAt: new Date().toISOString()
+      });
+      return {
+        success: true,
+        message: `Successfully linked to ${result.companyName || 'company account'}!`
+      };
+    }
+
+    return { success: false, error: 'Invalid link code' };
+  } catch (error) {
+    console.error('Failed to validate link code:', error);
+    return {
+      success: false,
+      error: 'Could not connect to Afforestation. Please try again later.'
+    };
+  }
+});
+
+resolver.define('unlinkAccount', async ({ context }) => {
+  const tenantId = context.cloudId;
+  await storage.delete(getAccountKey(tenantId));
+  await storage.delete(getPendingTokenKey(tenantId));
+  return { success: true, message: 'Account unlinked successfully' };
+});
+
+resolver.define('createSignupToken', async ({ context }) => {
+  const tenantId = context.cloudId;
+  try {
+    const siteUrl = context.siteUrl || `https://${context.cloudId}.atlassian.net`;
+    const result = await generateAuthToken('signup', siteUrl, tenantId);
+
+    await storage.set(getPendingTokenKey(tenantId), {
+      token: result.token,
+      type: 'signup',
+      createdAt: new Date().toISOString()
+    });
+
+    return {
+      success: true,
+      redirectUrl: `${MAIN_APP_URL}/signup/jira?token=${result.token}`
+    };
+  } catch (error) {
+    console.error('Failed to generate signup token:', error);
+    return {
+      success: false,
+      error: 'Could not generate signup link. Please try again.'
+    };
+  }
+});
+
+resolver.define('createLoginToken', async ({ context }) => {
+  const tenantId = context.cloudId;
+  try {
+    const siteUrl = context.siteUrl || `https://${context.cloudId}.atlassian.net`;
+    const result = await generateAuthToken('login', siteUrl, tenantId);
+
+    return {
+      success: true,
+      redirectUrl: `${MAIN_APP_URL}/auth/jira?token=${result.token}`
+    };
+  } catch (error) {
+    console.error('Failed to generate login token:', error);
+    return {
+      success: false,
+      error: 'Could not generate login link. Please try again.'
+    };
+  }
+});
+
+resolver.define('checkConnection', async ({ context }) => {
+  const tenantId = context.cloudId;
+  const pending = await storage.get(getPendingTokenKey(tenantId));
+
+  if (!pending || !pending.token) {
+    return { linked: false, error: 'No pending connection. Please create an account first.' };
+  }
+
+  try {
+    const result = await checkAuthToken(pending.token);
+
+    if (result.linked && result.companyId) {
+      await storage.set(getAccountKey(tenantId), {
+        companyId: result.companyId,
+        companyName: result.companyName,
+        apiKey: result.apiKey,
+        linkedAt: new Date().toISOString()
+      });
+      await storage.delete(getPendingTokenKey(tenantId));
+      return {
+        linked: true,
+        companyId: result.companyId,
+        companyName: result.companyName
+      };
+    }
+
+    return { linked: false };
+  } catch (error) {
+    console.error('Failed to check connection:', error);
+    return { linked: false, error: 'Could not check connection status.' };
+  }
+});
 
 // ============ Configuration Resolvers ============
 
@@ -62,8 +200,13 @@ resolver.define('getDashboardStats', async ({ context }) => {
   const tenantId = context.cloudId;
   const aggs = await getDashboardAggregations(tenantId);
   const config = await getTenantConfig(tenantId);
+  const now = new Date();
+  const monthKey = now.toISOString().substring(0, 7);
+  const topTeams = await getTopTeams(tenantId, 'monthly', monthKey, 5);
+
   return {
     aggregations: aggs,
+    topTeams,
     currencyName: config.scoring?.currencyName || 'Leaves',
     leavesPerTree: config.plantingMode?.conversion?.leavesPerTree || 100,
     plantingMode: config.plantingMode
@@ -102,18 +245,22 @@ resolver.define('previewIssueScore', async ({ payload, context }) => {
 
 // ============ Catalog Resolvers ============
 
-resolver.define('getCatalogProjects', async () => {
+resolver.define('getCatalogProjects', async ({ context }) => {
   try {
-    return await getCatalogProjects();
+    const tenantId = context.cloudId;
+    const account = await storage.get(getAccountKey(tenantId));
+    return await getCatalogProjects(account?.apiKey);
   } catch (error) {
     console.error('Failed to fetch catalog projects:', error);
     return [];
   }
 });
 
-resolver.define('getCatalogTrees', async () => {
+resolver.define('getCatalogTrees', async ({ context }) => {
   try {
-    return await getCatalogTrees();
+    const tenantId = context.cloudId;
+    const account = await storage.get(getAccountKey(tenantId));
+    return await getCatalogTrees(account?.apiKey);
   } catch (error) {
     console.error('Failed to fetch catalog trees:', error);
     return [];
@@ -129,9 +276,11 @@ resolver.define('previewAllocation', async ({ payload, context }) => {
   return previewAllocation(totalTrees, funding);
 });
 
-resolver.define('getPledgeStatus', async ({ payload }) => {
+resolver.define('getPledgeStatus', async ({ payload, context }) => {
   const { pledgeId } = payload;
-  return await getPledgeStatus(pledgeId);
+  const tenantId = context.cloudId;
+  const account = await storage.get(getAccountKey(tenantId));
+  return await getPledgeStatus(pledgeId, account?.apiKey);
 });
 
 // ============ Helpers ============

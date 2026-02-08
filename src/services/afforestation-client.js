@@ -1,40 +1,86 @@
 /**
  * Afforestation API Client
- * 
- * Client for interacting with api.afforestation.org
+ *
+ * Client for interacting with afforestation.org
  * per spec section 5
  */
 
 import { fetch } from '@forge/api';
 
-const API_BASE_URL = 'https://api.afforestation.org';
+const API_BASE_URL = 'https://afforestation.org';
 const DEFAULT_TIMEOUT_MS = 30000;
 const MAX_RETRIES = 3;
 
+// ============ Account & Auth ============
+
+/**
+ * Generate an auth token for signup or login
+ * @param {'signup'|'login'} type
+ * @param {string} siteUrl - Jira site URL
+ * @param {string} cloudId - Atlassian cloud ID
+ * @returns {Promise<{ token: string }>}
+ */
+export async function generateAuthToken(type, siteUrl, cloudId) {
+    return await apiRequest('POST', '/api/jira/generate-token', {
+        body: { type, siteUrl, cloudId }
+    });
+}
+
+/**
+ * Check if an auth token has been linked to a company account
+ * @param {string} token
+ * @returns {Promise<{ linked: boolean, companyId?: number, companyName?: string, apiKey?: string }>}
+ */
+export async function checkAuthToken(token) {
+    return await apiRequest('POST', '/api/jira/check-token', {
+        body: { token }
+    });
+}
+
+/**
+ * Validate a link code and get company details
+ * @param {string} linkCode
+ * @param {string} siteUrl
+ * @returns {Promise<{ companyId: number, companyName: string, apiKey: string }>}
+ */
+export async function validateLinkCode(linkCode, siteUrl) {
+    return await apiRequest('POST', '/api/jira/validate-link', {
+        body: { linkCode, siteUrl }
+    });
+}
+
+// ============ Catalog ============
+
 /**
  * Get catalog of available planting projects
+ * @param {string} [apiKey]
  * @returns {Promise<Array>}
  */
-export async function getCatalogProjects() {
-    return await apiRequest('GET', '/v1/catalog/projects');
+export async function getCatalogProjects(apiKey) {
+    return await apiRequest('GET', '/v1/catalog/projects', { apiKey });
 }
 
 /**
  * Get catalog of tree types
+ * @param {string} [apiKey]
  * @returns {Promise<Array>}
  */
-export async function getCatalogTrees() {
-    return await apiRequest('GET', '/v1/catalog/trees');
+export async function getCatalogTrees(apiKey) {
+    return await apiRequest('GET', '/v1/catalog/trees', { apiKey });
 }
+
+// ============ Pledges ============
 
 /**
  * Create a pledge (batch of tree commitments)
- * @param {object} pledgeData 
+ * @param {object} pledgeData
+ * @param {string} [apiKey]
  * @returns {Promise<{ success: boolean, pledgeId: string, error?: string }>}
  */
-export async function createPledge(pledgeData) {
+export async function createPledge(pledgeData, apiKey) {
     try {
         const response = await apiRequest('POST', '/v1/pledges', {
+            apiKey,
             body: {
                 source: 'jira-forge-app',
                 tenantId: pledgeData.tenantId,
@@ -68,12 +114,13 @@ export async function createPledge(pledgeData) {
 
 /**
  * Execute a pledge (trigger actual planting order)
- * @param {string} pledgeId 
+ * @param {string} pledgeId
+ * @param {string} [apiKey]
  * @returns {Promise<{ success: boolean, orderId?: string, error?: string }>}
  */
-export async function executePledge(pledgeId) {
+export async function executePledge(pledgeId, apiKey) {
     try {
-        const response = await apiRequest('POST', `/v1/pledges/${pledgeId}/execute`);
+        const response = await apiRequest('POST', `/v1/pledges/${pledgeId}/execute`, { apiKey });
 
         return {
             success: true,
@@ -91,12 +138,14 @@ export async function executePledge(pledgeId) {
 
 /**
  * Create an instant plant order (single tree)
- * @param {object} orderData 
+ * @param {object} orderData
+ * @param {string} [apiKey]
  * @returns {Promise<{ success: boolean, orderId?: string, error?: string }>}
  */
-export async function createPlantOrder(orderData) {
+export async function createPlantOrder(orderData, apiKey) {
     try {
         const response = await apiRequest('POST', '/v1/orders/plant', {
+            apiKey,
             body: {
                 source: 'jira-forge-app',
                 tenantId: orderData.tenantId,
@@ -130,27 +179,31 @@ export async function createPlantOrder(orderData) {
 
 /**
  * Get pledge status
- * @param {string} pledgeId 
+ * @param {string} pledgeId
+ * @param {string} [apiKey]
  * @returns {Promise<object>}
  */
-export async function getPledgeStatus(pledgeId) {
-    return await apiRequest('GET', `/v1/pledges/${pledgeId}`);
+export async function getPledgeStatus(pledgeId, apiKey) {
+    return await apiRequest('GET', `/v1/pledges/${pledgeId}`, { apiKey });
 }
 
 /**
  * Get order status
- * @param {string} orderId 
+ * @param {string} orderId
+ * @param {string} [apiKey]
  * @returns {Promise<object>}
  */
-export async function getOrderStatus(orderId) {
-    return await apiRequest('GET', `/v1/orders/${orderId}`);
+export async function getOrderStatus(orderId, apiKey) {
+    return await apiRequest('GET', `/v1/orders/${orderId}`, { apiKey });
 }
+
+// ============ Internal ============
 
 /**
  * Make API request with retry logic
- * @param {string} method 
- * @param {string} path 
- * @param {object} options 
+ * @param {string} method
+ * @param {string} path
+ * @param {object} options
  * @returns {Promise<object>}
  */
 async function apiRequest(method, path, options = {}) {
@@ -162,14 +215,20 @@ async function apiRequest(method, path, options = {}) {
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
 
+            const headers = {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+                'X-Source': 'jira-forge-app',
+                'X-Request-Id': generateRequestId()
+            };
+
+            if (options.apiKey) {
+                headers['Authorization'] = `Bearer ${options.apiKey}`;
+            }
+
             const fetchOptions = {
                 method,
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Accept': 'application/json',
-                    'X-Source': 'jira-forge-app',
-                    'X-Request-Id': generateRequestId()
-                },
+                headers,
                 signal: controller.signal
             };
 
@@ -218,7 +277,7 @@ function generateRequestId() {
 
 /**
  * Sleep utility
- * @param {number} ms 
+ * @param {number} ms
  * @returns {Promise<void>}
  */
 function sleep(ms) {

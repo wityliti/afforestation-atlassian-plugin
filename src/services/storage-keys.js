@@ -142,3 +142,23 @@ export function generateAwardId(tenantId, issueId, completionType, toStatus, tra
 export function getTenantListKey() {
     return 'tenants:list';
 }
+
+/**
+ * Account key (linked Afforestation company account)
+ * Stores: { companyId, companyName, apiKey, linkedAt }
+ * @param {string} tenantId
+ * @returns {string} account:{tenantId}:v1
+ */
+export function getAccountKey(tenantId) {
+    return `account:${tenantId}:v1`;
+}
+
+/**
+ * Pending auth token key (temporary, for signup/login flow)
+ * Stores: { token, type, createdAt }
+ * @param {string} tenantId
+ * @returns {string} pendingToken:{tenantId}
+ */
+export function getPendingTokenKey(tenantId) {
+    return `pendingToken:${tenantId}`;
+}

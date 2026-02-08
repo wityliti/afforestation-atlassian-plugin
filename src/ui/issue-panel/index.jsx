@@ -1,6 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { invoke } from '@forge/bridge';
-import { Text, Badge, Stack, Box } from '@forge/react';
+import ForgeReconciler, {
+    Text,
+    Badge,
+    Stack,
+    Box,
+    Heading,
+    Strong,
+    ProgressBar,
+    Inline
+} from '@forge/react';
 
 const Panel = () => {
     const [data, setData] = useState(null);
@@ -24,11 +33,36 @@ const Panel = () => {
     }, []);
 
     if (loading) {
-        return <Text>Loading...</Text>;
+        return (
+            <Box
+                padding="space.300"
+                xcss={{
+                    backgroundColor: 'color.background.neutral.subtle',
+                    borderRadius: '8px'
+                }}
+            >
+                <Stack space="space.200" alignInline="center">
+                    <ProgressBar isIndeterminate />
+                    <Text>Loading impact data...</Text>
+                </Stack>
+            </Box>
+        );
     }
 
     if (error) {
-        return <Text>Error: {error}</Text>;
+        return (
+            <Box
+                padding="space.200"
+                xcss={{
+                    backgroundColor: 'color.background.danger.subtle',
+                    borderRadius: '8px',
+                    border: '1px solid',
+                    borderColor: 'color.border.danger'
+                }}
+            >
+                <Text>⚠️ Error: {error}</Text>
+            </Box>
+        );
     }
 
     const currencyName = data?.currencyName || 'Leaves';
@@ -42,36 +76,128 @@ const Panel = () => {
     // If no contributions yet
     if (completionCount === 0) {
         return (
-            <Stack space="space.100">
-                <Text weight="bold">🌱 Impact</Text>
-                <Text>No impact recorded yet. Complete this issue to earn {currencyName}!</Text>
-            </Stack>
+            <Box
+                padding="space.300"
+                xcss={{
+                    backgroundColor: 'color.background.neutral.subtle',
+                    borderRadius: '12px',
+                    border: '2px dashed',
+                    borderColor: 'color.border.neutral',
+                    textAlign: 'center'
+                }}
+            >
+                <Stack space="space.200" alignInline="center">
+                    <Text size="xlarge">🌱</Text>
+                    <Heading as="h4">Ready to Grow?</Heading>
+                    <Text>Complete this issue to earn {currencyName} and plant trees! 🌍</Text>
+                </Stack>
+            </Box>
         );
     }
 
+    const progressToNextTree = (totalLeaves % leavesPerTree) / leavesPerTree;
+
     return (
-        <Stack space="space.100">
-            <Text weight="bold">🌳 Impact from this Issue</Text>
+        <Box
+            padding="space.300"
+            xcss={{
+                backgroundColor: 'color.background.success.subtle',
+                borderRadius: '12px',
+                border: '2px solid',
+                borderColor: 'color.border.success',
+                boxShadow: 'elevation.shadow.raised'
+            }}
+        >
+            <Stack space="space.300">
+                {/* Header */}
+                <Heading as="h3" size="small">🌳 Impact Tracker</Heading>
 
-            <Box>
-                <Badge appearance="primary">🍃 {totalLeaves} {currencyName}</Badge>
-            </Box>
+                {/* Main Stats */}
+                <Stack space="space.200">
+                    {/* Leaves Earned */}
+                    <Box
+                        padding="space.200"
+                        xcss={{
+                            backgroundColor: 'elevation.surface.raised',
+                            borderRadius: '8px',
+                            border: '1px solid',
+                            borderColor: 'color.border.neutral'
+                        }}
+                    >
+                        <Inline spread="space-between" alignBlock="center">
+                            <Stack space="space.050">
+                                <Text size="small">Total {currencyName}</Text>
+                                <Heading as="h2" size="large">🍃 {totalLeaves.toLocaleString()}</Heading>
+                            </Stack>
+                            <Badge appearance="primary" text="Earned" />
+                        </Inline>
+                    </Box>
 
-            {treesFromIssue > 0 && (
-                <Box>
-                    <Badge appearance="added">🌲 {treesFromIssue} Tree{treesFromIssue > 1 ? 's' : ''}</Badge>
+                    {/* Trees Planted */}
+                    {treesFromIssue > 0 && (
+                        <Box
+                            padding="space.200"
+                            xcss={{
+                                backgroundColor: 'color.background.success',
+                                borderRadius: '8px',
+                                border: '1px solid',
+                                borderColor: 'color.border.success'
+                            }}
+                        >
+                            <Inline spread="space-between" alignBlock="center">
+                                <Stack space="space.050">
+                                    <Text size="small">Trees Contributed</Text>
+                                    <Heading as="h2" size="large">🌲 {treesFromIssue}</Heading>
+                                </Stack>
+                                <Badge appearance="added" text="Planted!" />
+                            </Inline>
+                        </Box>
+                    )}
+
+                    {/* Progress to Next Tree */}
+                    {treesFromIssue === 0 && progressToNextTree > 0 && (
+                        <Box
+                            padding="space.200"
+                            xcss={{
+                                backgroundColor: 'elevation.surface.raised',
+                                borderRadius: '8px'
+                            }}
+                        >
+                            <Stack space="space.100">
+                                <Text size="small"><Strong>Progress to Next Tree</Strong></Text>
+                                <ProgressBar value={progressToNextTree} appearance="success" />
+                                <Text size="small">{(progressToNextTree * 100).toFixed(0)}% complete</Text>
+                            </Stack>
+                        </Box>
+                    )}
+                </Stack>
+
+                {/* Metadata */}
+                <Box
+                    padding="space.200"
+                    xcss={{
+                        backgroundColor: 'color.background.neutral.subtle',
+                        borderRadius: '8px',
+                        borderTop: '1px solid',
+                        borderColor: 'color.border.neutral'
+                    }}
+                >
+                    <Stack space="space.100">
+                        {completionCount > 1 && (
+                            <Text size="small">🔄 Completed <Strong>{completionCount} times</Strong></Text>
+                        )}
+                        {ledger?.lastCompletedAt && (
+                            <Text size="small">📅 Last: {new Date(ledger.lastCompletedAt).toLocaleDateString()}</Text>
+                        )}
+                    </Stack>
                 </Box>
-            )}
-
-            {completionCount > 1 && (
-                <Text>Completed {completionCount} times</Text>
-            )}
-
-            {ledger?.lastCompletedAt && (
-                <Text>Last: {new Date(ledger.lastCompletedAt).toLocaleDateString()}</Text>
-            )}
-        </Stack>
+            </Stack>
+        </Box>
     );
 };
 
-export default Panel;
+ForgeReconciler.render(
+    <React.StrictMode>
+        <Panel />
+    </React.StrictMode>
+);
