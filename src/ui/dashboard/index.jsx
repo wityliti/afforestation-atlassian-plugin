@@ -84,11 +84,6 @@ const Dashboard = () => {
     const remainderLeaves = weeklyLeaves % leavesPerTree;
     const treeProgress = hasRealData ? (remainderLeaves / leavesPerTree) : 0.73;
     
-    const progressData = [
-        { label: 'Earned', value: remainderLeaves, type: 'Earned' },
-        { label: 'Remaining', value: leavesPerTree - remainderLeaves, type: 'Remaining' }
-    ];
-
     // Chart data
     const impactBreakdown = [
         { type: 'week', label: 'This Week', value: weeklyLeaves },
@@ -148,15 +143,7 @@ const Dashboard = () => {
                             {remainderLeaves} / {leavesPerTree} Leaves
                         </Lozenge>
                     </Inline>
-                    <Box xcss={{ height: '200px' }}>
-                        <PieChart
-                            data={progressData}
-                            colorAccessor="type"
-                            labelAccessor="label"
-                            valueAccessor="value"
-                            showMarkLabels={true}
-                        />
-                    </Box>
+                    <ProgressBar value={treeProgress} ariaLabel="Tree Progress" />
                     <Text>
                         {treeProgress >= 0.8 ? '🔥 ' : ''}
                         You are <Strong>{(treeProgress * 100).toFixed(0)}%</Strong> of the way to planting your next tree!
