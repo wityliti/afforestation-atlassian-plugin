@@ -74,9 +74,11 @@ permissions:
       backend:
         - "https://afforestation.org"
         - "https://*.afforestation.org"
+        - "https://api.afforestation.org"
       client:
         - "https://afforestation.org"
         - "https://*.afforestation.org"
+        - "https://api.afforestation.org"
 
 # === APP CONFIG ===
 app:

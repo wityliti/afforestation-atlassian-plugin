@@ -6,6 +6,7 @@ import ForgeReconciler, {
     Box,
     Heading,
     ProgressBar,
+    PieChart,
     Strong,
     Inline,
     Tag,
@@ -61,26 +62,46 @@ const Dashboard = () => {
 
     const leavesPerTree = stats?.leavesPerTree || 100;
     const aggs = stats?.aggregations || {};
+    const companyStats = stats?.companyStats;
 
     // Use dummy data for preview when no real data exists
-    const hasRealData = (aggs?.monthly?.leaves || 0) > 0;
+    const hasRealData = (aggs?.monthly?.leaves || 0) > 0 || !!companyStats;
+    
     const weeklyLeaves = hasRealData ? (aggs?.weekly?.leaves || 0) : 2847;
     const weeklyTrees = hasRealData ? (aggs?.weekly?.trees || 0) : 28;
     const weeklyIssues = hasRealData ? (aggs?.weekly?.issueCount || 0) : 156;
-    const monthlyLeaves = hasRealData ? (aggs?.monthly?.leaves || 0) : 12450;
-    const monthlyTrees = hasRealData ? (aggs?.monthly?.trees || 0) : 124;
-    const monthlyIssues = hasRealData ? (aggs?.monthly?.issueCount || 0) : 589;
-    const allTimeLeaves = hasRealData ? (aggs?.allTime?.leaves || monthlyLeaves) : 48920;
-    const allTimeTrees = hasRealData ? (aggs?.allTime?.trees || monthlyTrees) : 489;
 
-    const co2Offset = calculateCO2Offset(monthlyTrees);
+    const monthlyLeaves = hasRealData ? (aggs?.monthly?.leaves || 0) : 12450;
+    const monthlyIssues = hasRealData ? (aggs?.monthly?.issueCount || 0) : 589;
+    
+    // Override trees and CO2 with real backend data if available
+    const monthlyTrees = companyStats ? companyStats.monthlyTrees : (hasRealData ? (aggs?.monthly?.trees || 0) : 124);
+    
+    const allTimeLeaves = hasRealData ? (aggs?.allTime?.leaves || monthlyLeaves) : 48920;
+    const allTimeTrees = companyStats ? companyStats.totalTrees : (hasRealData ? (aggs?.allTime?.trees || monthlyTrees) : 489);
+
+    const co2Offset = companyStats ? companyStats.monthlyCo2 : calculateCO2Offset(monthlyTrees);
     const remainderLeaves = weeklyLeaves % leavesPerTree;
     const treeProgress = hasRealData ? (remainderLeaves / leavesPerTree) : 0.73;
+    
+    const progressData = [
+        { label: 'Earned', value: remainderLeaves, type: 'Earned' },
+        { label: 'Remaining', value: leavesPerTree - remainderLeaves, type: 'Remaining' }
+    ];
 
     // Chart data
     const impactBreakdown = [
-        { label: 'This Week', value: weeklyLeaves },
-        { label: 'Previous Weeks', value: Math.max(0, monthlyLeaves - weeklyLeaves) }
+        { type: 'week', label: 'This Week', value: weeklyLeaves },
+        { type: 'previous', label: 'Previous Weeks', value: Math.max(0, monthlyLeaves - weeklyLeaves) }
+    ];
+
+    const volumeComparison = [
+        { xAxis: 'Leaves', value: weeklyLeaves, series: 'This Week' },
+        { xAxis: 'Leaves', value: monthlyLeaves, series: 'This Month' },
+        { xAxis: 'Trees', value: weeklyTrees, series: 'This Week' },
+        { xAxis: 'Trees', value: monthlyTrees, series: 'This Month' },
+        { xAxis: 'Issues', value: weeklyIssues, series: 'This Week' },
+        { xAxis: 'Issues', value: monthlyIssues, series: 'This Month' }
     ];
 
     return (
@@ -109,40 +130,6 @@ const Dashboard = () => {
                 co2: parseFloat(co2Offset)
             }} />
 
-            {/* This Month Achievement - Premium Card */}
-            <Box
-                padding="space.400"
-                xcss={{
-                    background: 'linear-gradient(135deg, #e3f5e3 0%, #f0f7f0 100%)',
-                    backgroundColor: 'color.background.success.subtle',
-                    borderRadius: '16px',
-                    border: '1px solid',
-                    borderColor: 'color.border.success',
-                    boxShadow: 'elevation.shadow.overlay'
-                }}
-            >
-                <Stack space="space.300">
-                    {/* Hero Stats */}
-                    <Stack space="space.100" alignInline="center">
-                        <Text size="small">THIS MONTH'S IMPACT</Text>
-                        <Inline space="space.200" alignBlock="center">
-                            <Heading as="h1" size="xxlarge">{monthlyTrees}</Heading>
-                            <Stack space="space.0">
-                                <Text size="large"><Strong>Trees Planted</Strong></Text>
-                                <Text size="small">{co2Offset} kg CO₂ offset</Text>
-                            </Stack>
-                        </Inline>
-                        <Inline space="space.100">
-                            <Tag text={`🍃 ${monthlyLeaves.toLocaleString()} leaves earned`} color="green" />
-                            <Tag text={`✅ ${monthlyIssues} issues completed`} color="blue" />
-                        </Inline>
-                    </Stack>
-
-                    {/* Visual Forest - Full Width */}
-                    <VisualForest treeCount={monthlyTrees} showLegend={true} compact={false} />
-                </Stack>
-            </Box>
-
             {/* Next Tree Progress */}
             <Box
                 padding="space.300"
@@ -161,7 +148,15 @@ const Dashboard = () => {
                             {remainderLeaves} / {leavesPerTree} Leaves
                         </Lozenge>
                     </Inline>
-                    <ProgressBar value={treeProgress} appearance={treeProgress >= 0.8 ? 'success' : 'default'} />
+                    <Box xcss={{ height: '200px' }}>
+                        <PieChart
+                            data={progressData}
+                            colorAccessor="type"
+                            labelAccessor="label"
+                            valueAccessor="value"
+                            showMarkLabels={true}
+                        />
+                    </Box>
                     <Text>
                         {treeProgress >= 0.8 ? '🔥 ' : ''}
                         You are <Strong>{(treeProgress * 100).toFixed(0)}%</Strong> of the way to planting your next tree!
@@ -198,21 +193,65 @@ const Dashboard = () => {
             </Inline>
 
             {/* Charts Section */}
-            <Inline space="space.300" alignBlock="start">
-                <Box xcss={{ flexGrow: '1', minWidth: '300px' }}>
-                    <ImpactChart
-                        type="donut"
-                        title="📊 Monthly Impact Breakdown"
-                        data={impactBreakdown}
-                    />
-                </Box>
-                <Box xcss={{ flexGrow: '1', minWidth: '300px' }}>
+            <Stack space="space.300">
+                <Inline space="space.300" alignBlock="start">
+                    <Box xcss={{ flexGrow: '1', minWidth: '300px' }}>
+                        <ImpactChart
+                            type="pie"
+                            title="📊 Monthly Impact Breakdown"
+                            subtitle="Leaves distribution"
+                            data={impactBreakdown}
+                            height={220}
+                        />
+                    </Box>
+                    <Box xcss={{ flexGrow: '1', minWidth: '300px' }}>
+                        <ImpactChart
+                            type="bar"
+                            title="📈 Weekly vs Monthly"
+                            subtitle="Leaves, trees, and issues"
+                            data={volumeComparison}
+                            height={220}
+                        />
+                    </Box>
+                </Inline>
+                <Box xcss={{ minWidth: '300px' }}>
                     <LeaderboardTable
                         teams={stats?.topTeams}
                         title="🏆 Top Teams (Monthly)"
                     />
                 </Box>
-            </Inline>
+            </Stack>
+
+            <Box
+                padding="space.400"
+                xcss={{
+                    background: 'linear-gradient(135deg, #e3f5e3 0%, #f0f7f0 100%)',
+                    backgroundColor: 'color.background.success.subtle',
+                    borderRadius: '16px',
+                    border: '1px solid',
+                    borderColor: 'color.border.success',
+                    boxShadow: 'elevation.shadow.overlay'
+                }}
+            >
+                <Stack space="space.300">
+                    <Stack space="space.100" alignInline="center">
+                        <Text size="small">THIS MONTH'S IMPACT</Text>
+                        <Inline space="space.200" alignBlock="center">
+                            <Heading as="h1" size="xxlarge">{monthlyTrees}</Heading>
+                            <Stack space="space.0">
+                                <Text size="large"><Strong>Trees Planted</Strong></Text>
+                                <Text size="small">{co2Offset} kg CO₂ offset</Text>
+                            </Stack>
+                        </Inline>
+                        <Inline space="space.100">
+                            <Tag text={`🍃 ${monthlyLeaves.toLocaleString()} leaves earned`} color="green" />
+                            <Tag text={`✅ ${monthlyIssues} issues completed`} color="blue" />
+                        </Inline>
+                    </Stack>
+
+                    <VisualForest treeCount={monthlyTrees} showLegend={true} compact={false} />
+                </Stack>
+            </Box>
 
             {/* Footer */}
             <Box

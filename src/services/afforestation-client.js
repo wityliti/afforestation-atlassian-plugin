@@ -7,7 +7,8 @@
 
 import { fetch } from '@forge/api';
 
-const API_BASE_URL = 'https://afforestation.org';
+const API_BASE_URL = 'https://api.afforestation.org';
+const AUTH_BASE_URL = 'https://afforestation.org';
 const DEFAULT_TIMEOUT_MS = 30000;
 const MAX_RETRIES = 3;
 
@@ -22,7 +23,8 @@ const MAX_RETRIES = 3;
  */
 export async function generateAuthToken(type, siteUrl, cloudId) {
     return await apiRequest('POST', '/api/jira/generate-token', {
-        body: { type, siteUrl, cloudId }
+        body: { type, siteUrl, cloudId },
+        baseUrl: AUTH_BASE_URL
     });
 }
 
@@ -33,7 +35,8 @@ export async function generateAuthToken(type, siteUrl, cloudId) {
  */
 export async function checkAuthToken(token) {
     return await apiRequest('POST', '/api/jira/check-token', {
-        body: { token }
+        body: { token },
+        baseUrl: AUTH_BASE_URL
     });
 }
 
@@ -44,9 +47,40 @@ export async function checkAuthToken(token) {
  * @returns {Promise<{ companyId: number, companyName: string, apiKey: string }>}
  */
 export async function validateLinkCode(linkCode, siteUrl) {
-    return await apiRequest('POST', '/api/jira/validate-link', {
-        body: { linkCode, siteUrl }
-    });
+    try {
+        return await apiRequest('POST', '/api/jira/validate-link', {
+            body: { linkCode, siteUrl },
+            baseUrl: AUTH_BASE_URL
+        });
+    } catch (error) {
+        // Handle 404 which the API returns for invalid codes
+        if (error.message && error.message.includes('HTTP 404')) {
+            console.warn('Validate link returned 404 (likely invalid code)');
+            return { error: 'Invalid link code' };
+        }
+        throw error;
+    }
+}
+
+/**
+ * Get company stats (trees, CO2, goals)
+ * @param {string} apiKey
+ * @returns {Promise<object>}
+ */
+export async function getCompanyStats(apiKey) {
+    try {
+        const response = await apiRequest('GET', '/api/jira/stats', { 
+            apiKey,
+            baseUrl: AUTH_BASE_URL 
+        });
+        return {
+            success: true,
+            stats: response.stats
+        };
+    } catch (error) {
+        console.warn('Failed to fetch company stats:', error);
+        return { success: false, error: error.message };
+    }
 }
 
 // ============ Catalog ============
@@ -207,7 +241,8 @@ export async function getOrderStatus(orderId, apiKey) {
  * @returns {Promise<object>}
  */
 async function apiRequest(method, path, options = {}) {
-    const url = `${API_BASE_URL}${path}`;
+    const baseUrl = options.baseUrl || API_BASE_URL;
+    const url = `${baseUrl}${path}`;
     let lastError;
 
     for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {

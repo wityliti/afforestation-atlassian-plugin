@@ -10,13 +10,53 @@ import { getTenantConfig, setTenantConfig, getRules, setRules, getFunding, setFu
 import { getDashboardAggregations, getUserAgg, getTopTeams } from '../services/aggregation';
 import { getIssueLedger } from '../services/ledger';
 import { previewScore } from '../services/scorer';
-import { getCatalogProjects, getCatalogTrees, getPledgeStatus, generateAuthToken, checkAuthToken, validateLinkCode } from '../services/afforestation-client';
+import { getCatalogProjects, getCatalogTrees, getPledgeStatus, generateAuthToken, checkAuthToken, validateLinkCode, getCompanyStats } from '../services/afforestation-client';
 import { previewAllocation, validateFundingConfig } from '../services/funding-allocator';
 import { getAccountKey, getPendingTokenKey } from '../services/storage-keys';
 
 const resolver = new Resolver();
 
 const MAIN_APP_URL = 'https://afforestation.org';
+
+const linkAccountWithCode = async (context, linkCode) => {
+  const tenantId = context.cloudId;
+
+  if (!linkCode || linkCode.trim().length === 0) {
+    return { success: false, error: 'Please enter a link code' };
+  }
+
+  try {
+    const siteUrl = context.siteUrl || `https://${context.cloudId}.atlassian.net`;
+    const result = await validateLinkCode(linkCode.trim(), siteUrl);
+
+    if (result.companyId) {
+      const account = {
+        isLinked: true,
+        companyId: result.companyId,
+        companyName: result.companyName
+      };
+      await storage.set(getAccountKey(tenantId), {
+        companyId: result.companyId,
+        companyName: result.companyName,
+        apiKey: result.apiKey,
+        linkedAt: new Date().toISOString()
+      });
+      return {
+        success: true,
+        account,
+        message: `Successfully linked to ${result.companyName || 'company account'}!`
+      };
+    }
+
+    return { success: false, error: 'Invalid link code' };
+  } catch (error) {
+    console.error('Failed to validate link code:', error);
+    return {
+      success: false,
+      error: 'Could not connect to Afforestation. Please try again later.'
+    };
+  }
+};
 
 // ============ Account Resolvers ============
 
@@ -34,38 +74,13 @@ resolver.define('getAccountStatus', async ({ context }) => {
 });
 
 resolver.define('linkAccount', async ({ payload, context }) => {
-  const tenantId = context.cloudId;
-  const { linkCode } = payload;
+  const linkCode = payload?.linkCode || payload?.code;
+  return await linkAccountWithCode(context, linkCode);
+});
 
-  if (!linkCode || linkCode.trim().length === 0) {
-    return { success: false, error: 'Please enter a link code' };
-  }
-
-  try {
-    const siteUrl = context.siteUrl || `https://${context.cloudId}.atlassian.net`;
-    const result = await validateLinkCode(linkCode.trim(), siteUrl);
-
-    if (result.companyId) {
-      await storage.set(getAccountKey(tenantId), {
-        companyId: result.companyId,
-        companyName: result.companyName,
-        apiKey: result.apiKey,
-        linkedAt: new Date().toISOString()
-      });
-      return {
-        success: true,
-        message: `Successfully linked to ${result.companyName || 'company account'}!`
-      };
-    }
-
-    return { success: false, error: 'Invalid link code' };
-  } catch (error) {
-    console.error('Failed to validate link code:', error);
-    return {
-      success: false,
-      error: 'Could not connect to Afforestation. Please try again later.'
-    };
-  }
+resolver.define('linkWithCode', async ({ payload, context }) => {
+  const linkCode = payload?.code || payload?.linkCode;
+  return await linkAccountWithCode(context, linkCode);
 });
 
 resolver.define('unlinkAccount', async ({ context }) => {
@@ -204,8 +219,23 @@ resolver.define('getDashboardStats', async ({ context }) => {
   const monthKey = now.toISOString().substring(0, 7);
   const topTeams = await getTopTeams(tenantId, 'monthly', monthKey, 5);
 
+  // Fetch real company stats if linked
+  let companyStats = null;
+  try {
+    const account = await storage.get(getAccountKey(tenantId));
+    if (account && account.apiKey) {
+      const result = await getCompanyStats(account.apiKey);
+      if (result.success) {
+        companyStats = result.stats;
+      }
+    }
+  } catch (err) {
+    console.warn('Failed to fetch company stats for dashboard:', err);
+  }
+
   return {
     aggregations: aggs,
+    companyStats,
     topTeams,
     currencyName: config.scoring?.currencyName || 'Leaves',
     leavesPerTree: config.plantingMode?.conversion?.leavesPerTree || 100,

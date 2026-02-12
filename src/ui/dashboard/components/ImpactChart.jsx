@@ -1,13 +1,12 @@
 import React from 'react';
-import { Text, Stack, Box, Heading, Inline, ProgressBar, Lozenge, Strong } from '@forge/react';
+import { Text, Stack, Box, PieChart, BarChart, Strong } from '@forge/react';
 
-/**
- * Impact visualization using ProgressBar (fallback for charts)
- */
 export const ImpactChart = ({
-    type = 'donut',
+    type = 'pie',
     title,
-    data
+    subtitle,
+    data,
+    height = 220
 }) => {
     if (!data || data.length === 0) {
         return (
@@ -28,8 +27,6 @@ export const ImpactChart = ({
         );
     }
 
-    const total = data.reduce((sum, item) => sum + item.value, 0);
-
     return (
         <Box
             padding="space.200"
@@ -42,24 +39,28 @@ export const ImpactChart = ({
         >
             <Stack space="space.150">
                 {title && <Text><Strong>{title}</Strong></Text>}
-
-                {data.map((item, i) => {
-                    const percent = total > 0 ? (item.value / total) * 100 : 0;
-                    return (
-                        <Stack key={i} space="space.050">
-                            <Inline spread="space-between" alignBlock="center">
-                                <Text size="small">{item.label}</Text>
-                                <Lozenge appearance={i === 0 ? 'success' : 'default'}>
-                                    {item.value.toLocaleString()} ({percent.toFixed(0)}%)
-                                </Lozenge>
-                            </Inline>
-                            <ProgressBar
-                                value={percent / 100}
-                                appearance={i === 0 ? 'success' : 'default'}
-                            />
-                        </Stack>
-                    );
-                })}
+                {type === 'bar' ? (
+                    <BarChart
+                        data={data}
+                        xAccessor="xAxis"
+                        yAccessor="value"
+                        colorAccessor="series"
+                        title=""
+                        subtitle={subtitle}
+                        height={height}
+                    />
+                ) : (
+                    <PieChart
+                        data={data}
+                        colorAccessor="type"
+                        labelAccessor="label"
+                        valueAccessor="value"
+                        title=""
+                        subtitle={subtitle}
+                        height={height}
+                        showMarkLabels={true}
+                    />
+                )}
             </Stack>
         </Box>
     );

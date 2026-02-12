@@ -12,7 +12,8 @@ import ForgeReconciler, {
     TabPanel,
     ProgressBar,
     Inline,
-    Lozenge
+    Lozenge,
+    Strong
 } from '@forge/react';
 
 // Components
@@ -256,7 +257,7 @@ const AdminPage = () => {
     const notLinkedWarning = !isLinked ? (
         <SectionMessage appearance="warning">
             <Text>
-                <strong>Account required:</strong> Connect your Afforestation account in the <strong>Account</strong> tab to enable this feature.
+                <Strong>Account required:</Strong> Connect your Afforestation account in the <Strong>Account</Strong> tab to enable this feature.
             </Text>
         </SectionMessage>
     ) : null;
